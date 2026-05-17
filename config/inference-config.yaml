@@ -1,0 +1,24 @@
+spark:
+  appName: "cs2-predictor-inference"
+  master: "local[4]"
+  shufflePartitions: 4
+  triggerIntervalMs: 1000        # micro-batch interval (ms)
+
+kafkaInput:
+  bootstrapServers: "localhost:9092"
+  topic: "cs2.gsi.events"
+  startingOffsets: "latest"      # use "earliest" for replay
+  groupId: "cs2-predictor-inference"
+
+kafkaOutput:
+  bootstrapServers: "localhost:9092"
+  topic: "cs2.gsi.predictions"
+
+model:
+  pipelineModelPath: "../cs2-predictor/models/cs2-predictor/pipeline-model"
+
+output:
+  mode: "kafka"                  # "kafka" or "console"
+
+web:
+  port: 7070                     # manual prediction REST API port
