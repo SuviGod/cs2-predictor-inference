@@ -2,8 +2,10 @@ package com.cs2predictor.inference.stream;
 
 import com.cs2predictor.inference.config.InferenceConfig;
 import com.cs2predictor.inference.config.KafkaOutputConfig;
+import com.cs2predictor.inference.config.KafkaSecurityConfig;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.streaming.DataStreamWriter;
 import org.apache.spark.sql.streaming.StreamingQuery;
 import org.apache.spark.sql.streaming.Trigger;
 
@@ -36,19 +38,29 @@ public class PredictionSink {
                         col("session_key").alias("sessionKey"),
                         col("round_num").alias("round"),
                         col("prob_ct_win").alias("probCtWin"),
-                        col("event_timestamp").alias("timestamp")
+                        col("event_timestamp").multiply(1000L).alias("timestamp")
                 )).alias("value")
         );
 
         KafkaOutputConfig kafkaOut = config.getKafkaOutput();
-        return kafkaReady
+        KafkaSecurityConfig security = config.getKafkaSecurity();
+
+        DataStreamWriter<Row> writer = kafkaReady
                 .writeStream()
                 .format("kafka")
                 .option("kafka.bootstrap.servers", kafkaOut.getBootstrapServers())
                 .option("topic", kafkaOut.getTopic())
                 .option("checkpointLocation", "checkpoint/predictions-kafka")
                 .outputMode("append")
-                .trigger(Trigger.ProcessingTime(triggerMs))
-                .start();
+                .trigger(Trigger.ProcessingTime(triggerMs));
+
+        if (security.isSaslEnabled()) {
+            writer = writer
+                    .option("kafka.security.protocol", security.getSecurityProtocol())
+                    .option("kafka.sasl.mechanism",     security.getSaslMechanism())
+                    .option("kafka.sasl.jaas.config",   security.buildJaasConfig());
+        }
+
+        return writer.start();
     }
 }

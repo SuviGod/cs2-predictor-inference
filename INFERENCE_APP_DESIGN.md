@@ -190,6 +190,7 @@ cs2-predictor-inference/
     │   │   ├── SparkConfig.java
     │   │   ├── KafkaInputConfig.java                 # bootstrapServers, topic, startingOffsets
     │   │   ├── KafkaOutputConfig.java                # bootstrapServers, topic
+    │   │   ├── KafkaSecurityConfig.java              # SASL/TLS — shared by all Kafka clients
     │   │   ├── ModelConfig.java                      # pipelineModelPath
     │   │   └── ConfigLoader.java
     │   ├── spark/
@@ -206,6 +207,8 @@ cs2-predictor-inference/
     │   │   └── PredictionSink.java                   # write predictions to Kafka / console
     │   └── util/
     │       └── AlivePlayerAggregator.java            # helper: aggregate allplayers map per tick
+    ├── resources/
+    │   └── log4j2.xml                                # logging config (root=ERROR, app=INFO)
     └── test/java/com/cs2predictor/inference/
         ├── stream/
         │   └── SessionStateFunctionTest.java         # unit tests for state transitions
@@ -440,12 +443,23 @@ kafkaOutput:
   bootstrapServers: "localhost:9092"
   topic: "cs2.gsi.predictions"
 
+# Optional — omit entirely for a plaintext local broker (defaults to PLAINTEXT)
+kafkaSecurity:
+  securityProtocol: "SASL_SSL"
+  saslMechanism: "SCRAM-SHA-256"
+  saslUsername: "..."
+  saslPassword: "..."
+
 model:
   pipelineModelPath: "../cs2-predictor/models/cs2-predictor/pipeline-model"
 
 output:
   mode: "kafka"                  # "kafka" or "console"
 ```
+
+`KafkaSecurityConfig` defaults `securityProtocol` to `PLAINTEXT` and treats SASL as
+disabled when `saslMechanism` is absent, so the `kafkaSecurity` block is optional for
+local development.
 
 ---
 
@@ -503,6 +517,37 @@ Events in a micro-batch arrive in Kafka offset order per partition. Since all
 events for a session key are in the same Kafka partition (by key-based routing),
 offset order equals arrival order. Sort by offset (or by `provider.timestamp`)
 inside the state function before processing to handle any minor reordering.
+
+### Checkpoint is cleared on every startup
+`Cs2InferenceApplication.clearCheckpoints()` deletes `checkpoint/predictions-kafka`
+and `checkpoint/predictions-console` before the SparkSession is created. This gives
+fresh state on every run (prev3 history starts from zero). Uses `Files.walkFileTree`
+with `Files.delete()` — not `File.delete()`, which silently fails on Windows for
+dot-prefixed files (`.N.delta.crc`) left by the HDFSBackedStateStore.
+
+Spark 4.x enforces `STATE_STORE_CHECKPOINT_LOCATION_NOT_EMPTY` on batch 0: if any
+stale state files remain, the query fails immediately. The `walkFileTree` approach
+avoids this.
+
+### SASL_SSL for Redpanda Serverless (and other managed brokers)
+All three Kafka client sites apply security options from `KafkaSecurityConfig`:
+- **Spark readStream** (`GsiStreamReader`) — `kafka.security.protocol`,
+  `kafka.sasl.mechanism`, `kafka.sasl.jaas.config` options (note `kafka.` prefix
+  required by Spark's Kafka connector)
+- **Spark writeStream** (`PredictionSink`) — same `kafka.*` options on the writer
+- **Plain Kafka client** (`ManualRequestConsumer`) — `security.protocol`,
+  `sasl.mechanism`, `sasl.jaas.config` properties (no prefix)
+
+The JAAS config string is built from `saslUsername` + `saslPassword` in
+`KafkaSecurityConfig.buildJaasConfig()` — credentials are never hardcoded.
+
+### Logging
+`src/main/resources/log4j2.xml` configures:
+- `com.cs2predictor` → `INFO` (all application logs visible)
+- `org.apache.spark.sql.execution.streaming.StreamExecution` → `INFO` (batch progress)
+- All other framework loggers (`org.apache.spark`, `org.apache.hadoop`, `org.apache.kafka`,
+  `io.netty`, `org.apache.parquet`, `org.apache.zookeeper`) → `ERROR`
+- Root → `ERROR`
 
 ---
 

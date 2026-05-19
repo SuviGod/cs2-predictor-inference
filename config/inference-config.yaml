@@ -5,20 +5,23 @@ spark:
   triggerIntervalMs: 1000        # micro-batch interval (ms)
 
 kafkaInput:
-  bootstrapServers: "localhost:9092"
+  bootstrapServers: "d85nitghvfrjvm53g2ug.any.eu-central-1.mpx.prd.cloud.redpanda.com:9092"
   topic: "cs2.gsi.events"
   startingOffsets: "latest"      # use "earliest" for replay
   groupId: "cs2-predictor-inference"
 
 kafkaOutput:
-  bootstrapServers: "localhost:9092"
+  bootstrapServers: "d85nitghvfrjvm53g2ug.any.eu-central-1.mpx.prd.cloud.redpanda.com:9092"
   topic: "cs2.gsi.predictions"
+
+kafkaSecurity:
+  securityProtocol: "SASL_SSL"
+  saslMechanism: "SCRAM-SHA-256"
+  saslUsername: "cs2-brocker"
+  saslPassword: "sKUVi0gQajnd2rcPrUGacQ5A5MX8Wa"
 
 model:
   pipelineModelPath: "../cs2-predictor/models/cs2-predictor/pipeline-model"
 
 output:
   mode: "kafka"                  # "kafka" or "console"
-
-web:
-  port: 7070                     # manual prediction REST API port

@@ -1,0 +1,42 @@
+/* Live status dot */
+.live-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.live-dot--on {
+  background: #2ecc71;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.live-dot--off {
+  background: #6c757d;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
+}
+
+/* Main chart height */
+.chart-main-wrap {
+  position: relative;
+  height: 290px;
+}
+
+/* Mini chart height in accordion */
+.mini-chart-wrap {
+  position: relative;
+  height: 120px;
+}
+
+/* Keep accordion button text small and compact */
+#roundAccordion .accordion-button {
+  font-size: 0.875rem;
+}
+
+/* Latest panel border emphasis */
+#latest-panel.border-success,
+#latest-panel.border-danger {
+  border-width: 2px !important;
+}

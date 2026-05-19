@@ -1,0 +1,13 @@
+{
+  "name": "cs2-predictor-ui",
+  "version": "1.0.0",
+  "description": "Web UI server for CS2 round-outcome predictor",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "kafkajs": "^2.2.4"
+  }
+}
