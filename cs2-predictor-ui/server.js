@@ -16,6 +16,8 @@ const MANUAL_RESPONSE_TOPIC = process.env.MANUAL_RESPONSE_TOPIC || 'cs2.gsi.manu
 const KAFKA_SASL_MECHANISM  = process.env.KAFKA_SASL_MECHANISM  || '';
 const KAFKA_SASL_USERNAME   = process.env.KAFKA_SASL_USERNAME   || '';
 const KAFKA_SASL_PASSWORD   = process.env.KAFKA_SASL_PASSWORD   || '';
+const CLEAR_KEY             = process.env.CLEAR_KEY             || 'cs2clear';
+const CONSUMER_GROUP        = process.env.CONSUMER_GROUP        || 'cs2-predictor-ui';
 const PREDICT_TIMEOUT_MS    = 10_000;
 
 // ---------------------------------------------------------------------------
@@ -103,7 +105,7 @@ async function startKafka() {
   // fresh group. Using true causes KafkaJS to seek to the earliest offset; on cloud
   // brokers (Redpanda Serverless) this can leave the consumer silently stalled when
   // the group's committed offset is stale or the seek fails internally.
-  const consumer = kafka.consumer({ groupId: 'cs2-predictor-ui', ...CONSUMER_GROUP_CONFIG });
+  const consumer = kafka.consumer({ groupId: CONSUMER_GROUP, ...CONSUMER_GROUP_CONFIG });
   await consumer.connect();
   await consumer.subscribe({ topic: KAFKA_TOPIC, fromBeginning: false });
   consumer.on(consumer.events.CRASH, ({ payload }) => {
@@ -123,7 +125,7 @@ async function startKafka() {
   });
 
   // Consumer: manual prediction responses (latest only — responses are transient)
-  const responseConsumer = kafka.consumer({ groupId: 'cs2-predictor-ui-responses', ...CONSUMER_GROUP_CONFIG });
+  const responseConsumer = kafka.consumer({ groupId: CONSUMER_GROUP + '-responses', ...CONSUMER_GROUP_CONFIG });
   await responseConsumer.connect();
   await responseConsumer.subscribe({ topic: MANUAL_RESPONSE_TOPIC, fromBeginning: false });
   await responseConsumer.run({
@@ -192,6 +194,17 @@ app.get('/api/events', (req, res) => {
     clearInterval(heartbeat);
     sseClients.delete(res);
   });
+});
+
+// DELETE /api/history — clear in-memory store; requires secret key in x-clear-key header
+app.delete('/api/history', (req, res) => {
+  if ((req.headers['x-clear-key'] || '') !== CLEAR_KEY) {
+    return res.status(401).json({ error: 'Invalid key' });
+  }
+  allPredictions.length = 0;
+  roundHistory.clear();
+  broadcastSSE({ type: 'clear' });
+  res.json({ ok: true });
 });
 
 // POST /api/predict — publish request to Kafka, wait for correlated response

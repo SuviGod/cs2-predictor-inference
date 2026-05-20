@@ -221,6 +221,44 @@ function updateAccordionItem(round, expand) {
   }
 }
 
+// ── Clear history ─────────────────────────────────────────────────────────────
+function clearUI() {
+  latestPrediction = null;
+  Object.keys(roundData).forEach(k => delete roundData[k]);
+  Object.keys(roundCharts).forEach(k => { roundCharts[k].destroy(); delete roundCharts[k]; });
+  Object.keys(sessionColors).forEach(k => delete sessionColors[k]);
+  nextColorIdx = 0;
+
+  mainChart.data.datasets = [];
+  mainChart.update('none');
+
+  document.getElementById('lp-pct').textContent     = '—';
+  document.getElementById('lp-side').textContent    = 'CT Win';
+  document.getElementById('lp-round').textContent   = '—';
+  document.getElementById('lp-session').textContent = '—';
+  const bar = document.getElementById('lp-bar');
+  bar.style.width = '0%';
+  bar.className   = 'progress-bar bg-secondary';
+  document.getElementById('latest-panel').className = 'card h-100';
+
+  document.getElementById('roundAccordion').innerHTML = '';
+  document.getElementById('noRoundsMsg').classList.remove('d-none');
+}
+
+document.getElementById('clearHistoryBtn').addEventListener('click', async () => {
+  const key = prompt('Enter the clear-history key:');
+  if (key === null) return;                                    // user cancelled
+  const resp = await fetch('/api/history', {
+    method: 'DELETE',
+    headers: { 'x-clear-key': key },
+  });
+  if (resp.status === 401) {
+    alert('Wrong key.');
+  }
+  // On success the server broadcasts a 'clear' SSE event, which triggers clearUI()
+  // for this tab and all others.
+});
+
 // ── Core: apply one prediction ────────────────────────────────────────────────
 function applyPrediction(pred, isLive) {
   updateLatestPanel(pred);
@@ -260,8 +298,11 @@ function connectSSE() {
   es.onopen   = ()  => setLiveStatus(true);
   es.onerror  = ()  => setLiveStatus(false);
   es.onmessage = (e) => {
-    try { applyPrediction(JSON.parse(e.data), true); }
-    catch (err) { console.error('SSE parse error:', err); }
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'clear') clearUI();
+      else applyPrediction(data, true);
+    } catch (err) { console.error('SSE parse error:', err); }
   };
 }
 

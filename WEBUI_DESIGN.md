@@ -15,6 +15,9 @@
 | 3 | Frontend (`index.html`, `app.js`, `style.css`) | ✅ Done |
 | 4 | End-to-end wiring and smoke test | ✅ Done |
 | 5 | Docker image (`cs2-predictor-ui/Dockerfile`) | ✅ Done |
+| 6 | Clear history button (`DELETE /api/history`, `CLEAR_KEY`) | ✅ Done |
+| 7 | Ghost consumer fix (`CONSUMER_GROUP` env var) | ✅ Done |
+| 8 | AWS EC2 deployment (t3.micro, AMI, security group, SSH key) | ✅ Done |
 
 ---
 
@@ -278,7 +281,16 @@ const MANUAL_RESPONSE_TOPIC = process.env.MANUAL_RESPONSE_TOPIC || 'cs2.gsi.manu
 - Accordion items are added dynamically as new rounds appear; the current round's
   item is always open.
 
-#### 6.4 Manual prediction form
+#### 6.4 Clear history button
+
+- Red outline button in the navbar (top-right, next to the live status dot).
+- On click: `prompt()` asks for the secret key (configured via `CLEAR_KEY` env var, default `cs2clear`).
+- Sends `DELETE /api/history` with `x-clear-key: <key>` header.
+- Server verifies key, clears `allPredictions` and `roundHistory`, then broadcasts `{ type: 'clear' }` via SSE.
+- All connected browser tabs receive the SSE clear event and call `clearUI()`, which resets the main chart, latest panel, and accordion simultaneously.
+- Wrong key → `alert('Wrong key.')`. Cancelled prompt → no request sent.
+
+#### 6.5 Manual prediction form
 - Ten labelled inputs (number fields with sensible min/max/step):
   `CT alive` (0–5), `T alive` (0–5), `CT total HP` (0–500),
   `T total HP` (0–500), `Bomb planted` (checkbox → 0/1),
@@ -455,9 +467,11 @@ docker run -p 3000:3000 --dns 8.8.8.8 \
   -e KAFKA_SASL_MECHANISM=scram-sha-256 \
   -e KAFKA_SASL_USERNAME=cs2-brocker \
   -e KAFKA_SASL_PASSWORD=sKUVi0gQajnd2rcPrUGacQ5A5MX8Wa \
+  -e CONSUMER_GROUP=cs2-predictor-ui-2 \
   cs2-predictor-ui
 # --dns 8.8.8.8 required: Docker's internal DNS cannot resolve the per-broker
 # hostnames Redpanda Serverless advertises in its metadata response.
+# CONSUMER_GROUP: use a fresh group name if the stream shows nothing (see ghost consumer note, Section 11).
 
 # 3. Open http://localhost:3000
 ```
@@ -501,6 +515,8 @@ docker run -p 3000:3000 \
 | `KAFKA_SASL_MECHANISM` | _(empty — no SASL)_ | e.g. `scram-sha-256`; enables SSL+SASL when set |
 | `KAFKA_SASL_USERNAME` | _(empty)_ | SASL username |
 | `KAFKA_SASL_PASSWORD` | _(empty)_ | SASL password |
+| `CONSUMER_GROUP` | `cs2-predictor-ui` | Base name for both Kafka consumer groups: predictions stream uses `CONSUMER_GROUP`, manual-prediction responses use `CONSUMER_GROUP-responses`. Change this if either the stream or manual predictions stop working — see the ghost consumer note in Section 11. |
+| `CLEAR_KEY` | `cs2clear` | Secret key required by the Clear History button in the UI |
 
 When `KAFKA_SASL_MECHANISM` is set, KafkaJS is configured with `ssl: true` and the
 `sasl` block. Leave all three unset for a plaintext local broker.
@@ -543,7 +559,151 @@ succeeds. Fix: add `--dns 8.8.8.8` to `docker run` so the container uses a resol
 that can reach these advertised broker addresses. The startup commands in Section 9
 already include this flag.
 
+### Ghost consumer group blocking the predictions stream
+
+**Symptom:** live stream shows nothing, or manual predictions time out, or both; container logs show `memberAssignment: {}` for the affected consumer group.
+
+**Cause:** Redpanda Serverless keeps dead consumer sessions alive well beyond the client-side `sessionTimeout` (observed: 30+ minutes despite `sessionTimeout: 30_000`). A previous `server.js` process or Docker container that exited without a clean shutdown leaves a "ghost" member in the group. With one partition per topic, the ghost holds it and the new consumer gets nothing.
+
+There are two consumer groups, both derived from `CONSUMER_GROUP`:
+- `CONSUMER_GROUP` (default `cs2-predictor-ui`) — live predictions stream
+- `CONSUMER_GROUP-responses` (default `cs2-predictor-ui-responses`) — manual prediction responses
+
+A ghost in either group breaks the corresponding feature. Changing `CONSUMER_GROUP` creates fresh names for **both** groups at once, fixing both symptoms.
+
+**Fix:** pass a different value for `CONSUMER_GROUP` when starting the container (e.g. `cs2-predictor-ui-2`). Both consumer groups get fresh names with no ghost members.
+
+```bash
+docker run ... -e CONSUMER_GROUP=cs2-predictor-ui-2 cs2-predictor-ui
+```
+
+Increment the suffix each time you hit the problem, or use the Redpanda Console to delete the stale consumer group manually.
+
 ### Docker + Kafka advertised listener (local broker only)
 For a local Kafka/Redpanda broker running in Docker, the broker must advertise
 `host.docker.internal:9092` for the containerised UI to reach it. See Section 7.
 This does not apply when connecting to Redpanda Serverless.
+
+---
+
+## 12. Updating the Docker image on Docker Hub
+
+Run these three commands from the project root whenever you want to publish a new version:
+
+```bash
+# 1. Rebuild the image
+docker build -t cs2-predictor-ui ./cs2-predictor-ui
+
+# 2. Tag for Docker Hub
+docker tag cs2-predictor-ui:latest sulimaivan/cs2-predictor-ui:latest
+
+# 3. Push
+docker push sulimaivan/cs2-predictor-ui:latest
+```
+
+The image is public at `docker.io/sulimaivan/cs2-predictor-ui:latest`.
+
+---
+
+## 13. AWS EC2 deployment
+
+### Existing AWS resources (do not recreate)
+
+| Resource | ID / Name | Region |
+|---|---|---|
+| Stopped EC2 instance | `i-00c40cee63f5dece0` | eu-central-1 |
+| Security group | `sg-0a6e45720ba12c19d` (`cs2-predictor-ui-sg`) | eu-central-1 |
+| Key pair | `cs2-predictor-key` | eu-central-1 |
+| Key file | `cs2-predictor-key.pem` (project root) | — |
+| AMI (Docker pre-installed) | `ami-01bc40b4960a79259` (`cs2-predictor-ui-docker-ready`) | eu-central-1 |
+
+Security group rules: inbound TCP 22 (SSH) and TCP 3000 (web UI) from `0.0.0.0/0`.
+
+### Option A — Restart the existing stopped instance
+
+The simplest path. The container is already configured on the instance.
+
+```bash
+# Start
+aws ec2 start-instances --region eu-central-1 --instance-ids i-00c40cee63f5dece0
+
+# Get new public DNS (changes on every start unless you assign an Elastic IP)
+aws ec2 describe-instances --region eu-central-1 --instance-ids i-00c40cee63f5dece0 \
+  --query "Reservations[0].Instances[0].PublicDnsName" --output text
+
+# Stop when done
+aws ec2 stop-instances --region eu-central-1 --instance-ids i-00c40cee63f5dece0
+```
+
+Open `http://<public-dns>:3000` in the browser.
+
+> **Note:** The public DNS changes every time the instance starts. Assign an Elastic IP
+> (free while the instance is running) if you need a stable address.
+
+### Option B — Launch a fresh instance from the AMI
+
+Use this if the existing instance is terminated or you need a clean deployment.
+The AMI (`ami-01bc40b4960a79259`) already has Docker installed, so the user-data
+script only needs to start the container (no package install step).
+
+```bash
+# Encode the startup script
+USERDATA=$(cat <<'EOF'
+#!/bin/bash
+systemctl start docker
+docker run -d --restart always -p 3000:3000 --dns 8.8.8.8 \
+  -e KAFKA_BROKERS=d85nitghvfrjvm53g2ug.any.eu-central-1.mpx.prd.cloud.redpanda.com:9092 \
+  -e KAFKA_SASL_MECHANISM=scram-sha-256 \
+  -e KAFKA_SASL_USERNAME=cs2-brocker \
+  -e KAFKA_SASL_PASSWORD=sKUVi0gQajnd2rcPrUGacQ5A5MX8Wa \
+  -e CONSUMER_GROUP=cs2-predictor-ui-2 \
+  sulimaivan/cs2-predictor-ui:latest
+EOF
+)
+
+aws ec2 run-instances \
+  --region eu-central-1 \
+  --image-id ami-01bc40b4960a79259 \
+  --instance-type t3.micro \
+  --key-name cs2-predictor-key \
+  --security-group-ids sg-0a6e45720ba12c19d \
+  --user-data "$USERDATA" \
+  --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=cs2-predictor-ui}]" \
+  --query "Instances[0].InstanceId" --output text
+```
+
+Wait ~30 seconds (container starts much faster than a full Docker install), then get the public DNS as in Option A.
+
+### Updating a running instance to the latest image
+
+SSH in and replace the container (`ec2-user` requires `sudo` for Docker):
+
+```bash
+ssh -i cs2-predictor-key.pem ec2-user@<public-dns>
+
+sudo docker pull sulimaivan/cs2-predictor-ui:latest
+sudo docker stop $(sudo docker ps -q)
+sudo docker rm $(sudo docker ps -aq)
+sudo docker run -d --restart always -p 3000:3000 --dns 8.8.8.8 \
+  -e KAFKA_BROKERS=d85nitghvfrjvm53g2ug.any.eu-central-1.mpx.prd.cloud.redpanda.com:9092 \
+  -e KAFKA_SASL_MECHANISM=scram-sha-256 \
+  -e KAFKA_SASL_USERNAME=cs2-brocker \
+  -e KAFKA_SASL_PASSWORD=sKUVi0gQajnd2rcPrUGacQ5A5MX8Wa \
+  -e CONSUMER_GROUP=cs2-predictor-ui-2 \
+  sulimaivan/cs2-predictor-ui:latest
+```
+
+Or as a one-liner from your local machine (no interactive SSH needed):
+
+```bash
+ssh -i cs2-predictor-key.pem -o StrictHostKeyChecking=no ec2-user@<public-dns> \
+  "sudo docker pull sulimaivan/cs2-predictor-ui:latest && \
+   sudo docker stop \$(sudo docker ps -q) 2>/dev/null; sudo docker rm \$(sudo docker ps -aq) 2>/dev/null; \
+   sudo docker run -d --restart always -p 3000:3000 --dns 8.8.8.8 \
+     -e KAFKA_BROKERS=d85nitghvfrjvm53g2ug.any.eu-central-1.mpx.prd.cloud.redpanda.com:9092 \
+     -e KAFKA_SASL_MECHANISM=scram-sha-256 \
+     -e KAFKA_SASL_USERNAME=cs2-brocker \
+     -e KAFKA_SASL_PASSWORD=sKUVi0gQajnd2rcPrUGacQ5A5MX8Wa \
+     -e CONSUMER_GROUP=cs2-predictor-ui-2 \
+     sulimaivan/cs2-predictor-ui:latest"
+```
