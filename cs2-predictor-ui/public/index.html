@@ -71,59 +71,118 @@
     <div class="card-body">
       <form id="predictForm" novalidate>
         <div class="row g-2 mb-2">
+
           <div class="col-6 col-sm-4 col-lg-2">
-            <label class="form-label small mb-1" for="f-ct-alive">CT Alive</label>
+            <label class="form-label small mb-1 d-flex align-items-center gap-1" for="f-ct-alive">
+              CT Alive
+              <span class="hint-icon" tabindex="0" data-bs-toggle="tooltip"
+                    title="Number of Counter-Terrorist (blue team) players still alive this round. CTs defend the two bomb sites; each team has 5 players.">?</span>
+            </label>
             <input type="number" class="form-control form-control-sm" id="f-ct-alive"
-                   min="0" max="5" step="1" value="5" required>
+                   min="0" max="5" step="1" value="5">
+            <div class="invalid-feedback small"></div>
           </div>
+
           <div class="col-6 col-sm-4 col-lg-2">
-            <label class="form-label small mb-1" for="f-t-alive">T Alive</label>
+            <label class="form-label small mb-1 d-flex align-items-center gap-1" for="f-t-alive">
+              T Alive
+              <span class="hint-icon" tabindex="0" data-bs-toggle="tooltip"
+                    title="Number of Terrorist (yellow/gold team) players still alive this round. Ts try to plant the bomb at a site; each team has 5 players.">?</span>
+            </label>
             <input type="number" class="form-control form-control-sm" id="f-t-alive"
-                   min="0" max="5" step="1" value="5" required>
+                   min="0" max="5" step="1" value="5">
+            <div class="invalid-feedback small"></div>
           </div>
+
           <div class="col-6 col-sm-4 col-lg-2">
-            <label class="form-label small mb-1" for="f-ct-hp">CT Total HP</label>
+            <label class="form-label small mb-1 d-flex align-items-center gap-1" for="f-ct-hp">
+              CT Total HP
+              <span class="hint-icon" tabindex="0" data-bs-toggle="tooltip"
+                    title="Sum of health points of all living CT players. Each player starts at 100 HP and loses HP when hit. E.g. 3 CTs at 80 + 60 + 40 = 180 total.">?</span>
+            </label>
             <input type="number" class="form-control form-control-sm" id="f-ct-hp"
-                   min="0" max="500" step="1" value="500" required>
+                   min="0" max="500" step="1" value="500">
+            <div class="invalid-feedback small"></div>
           </div>
+
           <div class="col-6 col-sm-4 col-lg-2">
-            <label class="form-label small mb-1" for="f-t-hp">T Total HP</label>
+            <label class="form-label small mb-1 d-flex align-items-center gap-1" for="f-t-hp">
+              T Total HP
+              <span class="hint-icon" tabindex="0" data-bs-toggle="tooltip"
+                    title="Sum of health points of all living T players. Maximum is (T players alive) × 100 HP.">?</span>
+            </label>
             <input type="number" class="form-control form-control-sm" id="f-t-hp"
-                   min="0" max="500" step="1" value="500" required>
+                   min="0" max="500" step="1" value="500">
+            <div class="invalid-feedback small"></div>
           </div>
+
           <div class="col-6 col-sm-4 col-lg-2">
-            <label class="form-label small mb-1" for="f-time">Time Remaining (s)</label>
+            <label class="form-label small mb-1 d-flex align-items-center gap-1" for="f-time">
+              Time Remaining (s)
+              <span class="hint-icon" tabindex="0" data-bs-toggle="tooltip"
+                    title="Seconds left in the round. Before bomb plant: up to 115 s (round timer). After bomb is planted: up to 40 s (bomb fuse). Updates automatically when you toggle Bomb Planted.">?</span>
+            </label>
             <input type="number" class="form-control form-control-sm" id="f-time"
-                   min="0" max="115" step="0.1" value="115" required>
+                   min="0" max="115" step="0.1" value="115">
+            <div class="invalid-feedback small"></div>
           </div>
+
           <div class="col-6 col-sm-4 col-lg-2 d-flex align-items-end pb-1">
             <div class="form-check form-switch">
               <input class="form-check-input" type="checkbox" id="f-bomb">
               <label class="form-check-label small" for="f-bomb">Bomb Planted</label>
+              <span class="hint-icon ms-1" tabindex="0" data-bs-toggle="tooltip"
+                    title="Terrorists have successfully planted the bomb at a site. CTs now have 40 s to defuse it or lose the round. Toggling this updates the Time Remaining maximum.">?</span>
             </div>
           </div>
+
         </div>
         <div class="row g-2 mb-3">
+
           <div class="col-6 col-sm-3">
-            <label class="form-label small mb-1" for="f-ct-kills">CT Kills Prev3</label>
+            <label class="form-label small mb-1 d-flex align-items-center gap-1" for="f-ct-kills">
+              CT Kills Prev3
+              <span class="hint-icon" tabindex="0" data-bs-toggle="tooltip"
+                    title="Total kills made by currently-alive CT players, summed across the previous 3 rounds. Measures recent CT firepower. Maximum is 5 kills/round × 3 rounds = 15.">?</span>
+            </label>
             <input type="number" class="form-control form-control-sm" id="f-ct-kills"
-                   min="0" step="1" value="0" required>
+                   min="0" max="15" step="1" value="0">
+            <div class="invalid-feedback small"></div>
           </div>
+
           <div class="col-6 col-sm-3">
-            <label class="form-label small mb-1" for="f-ct-dmg">CT Damage Prev3</label>
+            <label class="form-label small mb-1 d-flex align-items-center gap-1" for="f-ct-dmg">
+              CT Damage Prev3
+              <span class="hint-icon" tabindex="0" data-bs-toggle="tooltip"
+                    title="Total damage dealt by alive CT players across the previous 3 rounds. A proxy for how impactful surviving CT players have been recently.">?</span>
+            </label>
             <input type="number" class="form-control form-control-sm" id="f-ct-dmg"
-                   min="0" step="1" value="0" required>
+                   min="0" max="3000" step="1" value="0">
+            <div class="invalid-feedback small"></div>
           </div>
+
           <div class="col-6 col-sm-3">
-            <label class="form-label small mb-1" for="f-t-kills">T Kills Prev3</label>
+            <label class="form-label small mb-1 d-flex align-items-center gap-1" for="f-t-kills">
+              T Kills Prev3
+              <span class="hint-icon" tabindex="0" data-bs-toggle="tooltip"
+                    title="Total kills made by currently-alive T players, summed across the previous 3 rounds. Maximum is 5 kills/round × 3 rounds = 15.">?</span>
+            </label>
             <input type="number" class="form-control form-control-sm" id="f-t-kills"
-                   min="0" step="1" value="0" required>
+                   min="0" max="15" step="1" value="0">
+            <div class="invalid-feedback small"></div>
           </div>
+
           <div class="col-6 col-sm-3">
-            <label class="form-label small mb-1" for="f-t-dmg">T Damage Prev3</label>
+            <label class="form-label small mb-1 d-flex align-items-center gap-1" for="f-t-dmg">
+              T Damage Prev3
+              <span class="hint-icon" tabindex="0" data-bs-toggle="tooltip"
+                    title="Total damage dealt by alive T players across the previous 3 rounds. Higher values suggest T-side players have been more active and dangerous lately.">?</span>
+            </label>
             <input type="number" class="form-control form-control-sm" id="f-t-dmg"
-                   min="0" step="1" value="0" required>
+                   min="0" max="3000" step="1" value="0">
+            <div class="invalid-feedback small"></div>
           </div>
+
         </div>
         <div class="d-flex align-items-center gap-2 flex-wrap">
           <button type="button" class="btn btn-outline-secondary btn-sm" id="prefillBtn"

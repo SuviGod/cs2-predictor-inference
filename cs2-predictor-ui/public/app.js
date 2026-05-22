@@ -1,10 +1,11 @@
 'use strict';
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let latestPrediction = null;
-let mainChart        = null;
-const sessionColors  = {};
-let nextColorIdx     = 0;
+let latestPrediction     = null;
+let mainChart            = null;
+const sessionColors      = {};
+let nextColorIdx         = 0;
+let formSubmitAttempted  = false;
 
 // roundData[roundNum] = [{ probCtWin, timestamp }, ...]  (aggregated across sessions)
 const roundData   = {};
@@ -306,9 +307,108 @@ function connectSSE() {
   };
 }
 
+// ── Manual prediction validation ─────────────────────────────────────────────
+const MANUAL_FIELD_IDS = ['f-ct-alive','f-t-alive','f-ct-hp','f-t-hp','f-time',
+                          'f-ct-kills','f-ct-dmg','f-t-kills','f-t-dmg'];
+
+function validateManualForm() {
+  const iv = id => {
+    const s = document.getElementById(id).value.trim();
+    if (!s) return NaN;
+    const n = Number(s);
+    return Number.isFinite(n) && n === Math.floor(n) ? n : NaN;
+  };
+  const fv = id => {
+    const s = document.getElementById(id).value.trim();
+    if (!s) return NaN;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : NaN;
+  };
+
+  const ctAlive     = iv('f-ct-alive');
+  const tAlive      = iv('f-t-alive');
+  const ctHp        = iv('f-ct-hp');
+  const tHp         = iv('f-t-hp');
+  const time        = fv('f-time');
+  const bombPlanted = document.getElementById('f-bomb').checked;
+  const ctKills     = iv('f-ct-kills');
+  const ctDmg       = iv('f-ct-dmg');
+  const tKills      = iv('f-t-kills');
+  const tDmg        = iv('f-t-dmg');
+
+  const errors = {};
+
+  if (isNaN(ctAlive) || ctAlive < 0 || ctAlive > 5)
+    errors['f-ct-alive'] = 'Enter a whole number from 0 to 5';
+  if (isNaN(tAlive) || tAlive < 0 || tAlive > 5)
+    errors['f-t-alive'] = 'Enter a whole number from 0 to 5';
+
+  if (!errors['f-ct-alive'] && !errors['f-t-alive'] && ctAlive === 0 && tAlive === 0)
+    errors['f-ct-alive'] = 'At least one side must have a player alive';
+
+  if (!errors['f-ct-alive']) {
+    if (isNaN(ctHp) || ctHp < 0)
+      errors['f-ct-hp'] = 'Enter a non-negative whole number';
+    else if (ctAlive === 0 && ctHp !== 0)
+      errors['f-ct-hp'] = 'Must be 0 — no CT players are alive';
+    else if (ctAlive > 0 && ctHp < ctAlive)
+      errors['f-ct-hp'] = `Minimum ${ctAlive} (at least 1 HP per alive player)`;
+    else if (ctHp > ctAlive * 100)
+      errors['f-ct-hp'] = `Maximum ${ctAlive * 100} (100 HP per player × ${ctAlive} alive)`;
+  }
+
+  if (!errors['f-t-alive']) {
+    if (isNaN(tHp) || tHp < 0)
+      errors['f-t-hp'] = 'Enter a non-negative whole number';
+    else if (tAlive === 0 && tHp !== 0)
+      errors['f-t-hp'] = 'Must be 0 — no T players are alive';
+    else if (tAlive > 0 && tHp < tAlive)
+      errors['f-t-hp'] = `Minimum ${tAlive} (at least 1 HP per alive player)`;
+    else if (tHp > tAlive * 100)
+      errors['f-t-hp'] = `Maximum ${tAlive * 100} (100 HP per player × ${tAlive} alive)`;
+  }
+
+  const maxTime = bombPlanted ? 40 : 115;
+  if (isNaN(time) || time < 0 || time > maxTime)
+    errors['f-time'] = bombPlanted ? 'Bomb fuse: 0 – 40 s' : 'Round timer: 0 – 115 s';
+
+  if (isNaN(ctKills) || ctKills < 0 || ctKills > 15)
+    errors['f-ct-kills'] = '0 – 15  (max 5 kills/round × 3 rounds)';
+  if (isNaN(tKills)  || tKills  < 0 || tKills  > 15)
+    errors['f-t-kills'] = '0 – 15  (max 5 kills/round × 3 rounds)';
+  if (isNaN(ctDmg) || ctDmg < 0 || ctDmg > 3000)
+    errors['f-ct-dmg'] = '0 – 3000';
+  if (isNaN(tDmg)  || tDmg  < 0 || tDmg  > 3000)
+    errors['f-t-dmg'] = '0 – 3000';
+
+  return errors;
+}
+
+function applyManualValidation(errors) {
+  for (const id of MANUAL_FIELD_IDS) {
+    const el = document.getElementById(id);
+    const fb = el.nextElementSibling;
+    if (errors[id]) {
+      el.classList.add('is-invalid');
+      if (fb) fb.textContent = errors[id];
+    } else {
+      el.classList.remove('is-invalid');
+    }
+  }
+  return Object.keys(errors).length === 0;
+}
+
+function validateAndApply() {
+  if (!formSubmitAttempted) return;
+  applyManualValidation(validateManualForm());
+}
+
 // ── Manual prediction form ────────────────────────────────────────────────────
 document.getElementById('predictForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  formSubmitAttempted = true;
+  if (!applyManualValidation(validateManualForm())) return;
+
   const btn     = document.getElementById('predictBtn');
   const spinner = document.getElementById('predictSpinner');
   const result  = document.getElementById('predictResult');
@@ -368,15 +468,29 @@ document.getElementById('prefillBtn').addEventListener('click', () => {
   document.getElementById('f-ct-hp').value     = 500;
   document.getElementById('f-t-hp').value      = 500;
   document.getElementById('f-bomb').checked    = false;
+  document.getElementById('f-time').max        = 115;
   document.getElementById('f-time').value      = 115;
   document.getElementById('f-ct-kills').value  = 0;
   document.getElementById('f-ct-dmg').value    = 0;
   document.getElementById('f-t-kills').value   = 0;
   document.getElementById('f-t-dmg').value     = 0;
+  validateAndApply();
+});
+
+// Live validation after first submit attempt
+MANUAL_FIELD_IDS.forEach(id => {
+  document.getElementById(id).addEventListener('input', validateAndApply);
+});
+document.getElementById('f-bomb').addEventListener('change', () => {
+  document.getElementById('f-time').max = document.getElementById('f-bomb').checked ? 40 : 115;
+  validateAndApply();
 });
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 (async () => {
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+    new bootstrap.Tooltip(el);
+  });
   initMainChart();
   setLiveStatus(false);
   await seedHistory();

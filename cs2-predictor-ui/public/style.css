@@ -35,6 +35,28 @@
   font-size: 0.875rem;
 }
 
+/* Hint icon (? badge next to form labels) */
+.hint-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #6c757d;
+  color: #fff;
+  font-size: 9px;
+  font-weight: bold;
+  cursor: help;
+  flex-shrink: 0;
+  line-height: 1;
+  vertical-align: middle;
+}
+.hint-icon:focus {
+  outline: 2px solid #0d6efd;
+  outline-offset: 1px;
+}
+
 /* Latest panel border emphasis */
 #latest-panel.border-success,
 #latest-panel.border-danger {
